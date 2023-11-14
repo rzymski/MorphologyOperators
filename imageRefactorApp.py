@@ -111,7 +111,6 @@ class ImageRefactorApp:
         self.startTime, self.endTime = None, None
 
     def dilation(self, widthWindow, heightWindow, optimized):
-        self.measureTime("START")
         if self.image:
             height, width, _ = self.pixels.shape
             padHeight = heightWindow // 2
@@ -130,11 +129,8 @@ class ImageRefactorApp:
                             dilatedPixels[y, x, c] = np.max(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
                 self.pixels = deepcopy(dilatedPixels)
             self.limitPixelsAndShowImage(self.pixels, True)
-        self.measureTime("END")
-
 
     def erosion(self, widthWindow, heightWindow, optimized):
-        self.measureTime("START")
         if self.image:
             height, width, _ = self.pixels.shape
             padHeight = heightWindow // 2
@@ -153,7 +149,6 @@ class ImageRefactorApp:
                             dilatedPixels[y, x, c] = np.min(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
                 self.pixels = deepcopy(dilatedPixels)
             self.limitPixelsAndShowImage(self.pixels, True)
-        self.measureTime("END")
 
     def opening(self, widthWindow, heightWindow, optimized):
         self.erosion(widthWindow, heightWindow, optimized)
@@ -163,8 +158,42 @@ class ImageRefactorApp:
         self.dilation(widthWindow, heightWindow, optimized)
         self.erosion(widthWindow, heightWindow, optimized)
 
+    # def hitOrMiss(self, mask, optimized):
+    #     self.measureTime("START")
+    #     if self.image:
+    #         height, width, _ = self.pixels.shape
+    #         heightWindow, widthWindow = mask.shape
+    #         # ic(mask, mask.shape, heightWindow, widthWindow)
+    #         padHeight = heightWindow // 2
+    #         padWidth = widthWindow // 2
+    #         paddedImage = np.pad(self.pixels, ((padHeight, padHeight), (padWidth, padWidth), (0, 0)), mode='edge')
+    #         if optimized:
+    #             reds = paddedImage[:, :, 0]
+    #             redSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow))
+    #             undefinedMask = np.isnan(mask)
+    #             equalsRed = np.all(np.equal(redSquares, mask) | undefinedMask, axis=(2, 3))
+    #             # hitOrMiss = np.where(equalsRed, 255, 0)  # erosion
+    #             hitOrMiss = np.where(equalsRed, 0, 255)  # dilatation
+    #             self.pixels[:, :, 0] = self.pixels[:, :, 1] = self.pixels[:, :, 2] = hitOrMiss
+    #         else:
+    #             dilatedPixels = deepcopy(self.pixels)
+    #             for y in range(0, height):
+    #                 for x in range(0, width):
+    #                     undefinedMask = np.isnan(mask)
+    #                     equal = np.all(np.equal(paddedImage[y:y+heightWindow, x:x+widthWindow, 0], mask) | undefinedMask)
+    #                     # dilatedPixels[y, x, 0] = 255 if equal else 0  # erosion
+    #                     dilatedPixels[y, x, 0] = 0 if equal else 255  # dilatation
+    #             dilatedPixels[:, :, 1] = dilatedPixels[:, :, 2] = dilatedPixels[:, :, 0]
+    #             self.pixels = deepcopy(dilatedPixels)
+    #         self.limitPixelsAndShowImage(self.pixels, True)
+    #     self.measureTime("END")
+    #
+    # def thinning(self, widthWindow, heightWindow, optimized):
+    #     # mask = np.array([[255, 255, 255], [255, 255, 255], [255, 255, 255]])  # erosion
+    #     mask = np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]])  # dilation
+    #     self.hitOrMiss(mask, optimized)
+
     def hitOrMiss(self, mask, optimized):
-        self.measureTime("START")
         if self.image:
             height, width, _ = self.pixels.shape
             heightWindow, widthWindow = mask.shape
@@ -176,53 +205,48 @@ class ImageRefactorApp:
                 reds = paddedImage[:, :, 0]
                 redSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow))
                 undefinedMask = np.isnan(mask)
-                equalsRed = np.all(np.equal(redSquares, mask) | undefinedMask, axis=(2, 3))
-                # hitOrMiss = np.where(equalsRed, 255, 0)  # erosion
-                hitOrMiss = np.where(equalsRed, 0, 255)  # dilatation
-                self.pixels[:, :, 0] = self.pixels[:, :, 1] = self.pixels[:, :, 2] = hitOrMiss
+                hitOrMiss = np.all(np.equal(redSquares, mask) | undefinedMask, axis=(2, 3))
             else:
-                dilatedPixels = deepcopy(self.pixels)
-                for y in range(0, height):
-                    for x in range(0, width):
+                hitOrMiss = np.zeros((height, width), dtype=bool)
+                for y in range(height):
+                    for x in range(width):
                         undefinedMask = np.isnan(mask)
-                        equal = np.all(np.equal(paddedImage[y:y+heightWindow, x:x+widthWindow, 0], mask) | undefinedMask)
-                        # dilatedPixels[y, x, 0] = 255 if equal else 0  # erosion
-                        dilatedPixels[y, x, 0] = 0 if equal else 255  # dilatation
-                dilatedPixels[:, :, 1] = dilatedPixels[:, :, 2] = dilatedPixels[:, :, 0]
-                self.pixels = deepcopy(dilatedPixels)
+                        hitOrMissElement = np.all(np.equal(paddedImage[y:y+heightWindow, x:x+widthWindow, 0], mask) | undefinedMask)
+                        hitOrMiss[y, x] = hitOrMissElement
+            return hitOrMiss
+
+    def deleteHit(self, hits, optimized):
+        height, width, _ = self.pixels.shape
+        if optimized:
+            self.pixels[hits] = 0
+        else:
+            for y in range(height):
+                for x in range(width):
+                    if hits[y, x]:
+                        self.pixels[y, x] = 0
+
+    def thinning(self, optimized):
+        if self.image:
+            mask1 = np.array([[255, 255, 255],
+                             [0, 255, 0],
+                             [np.nan, np.nan, np.nan]])
+            mask2 = np.array([[255, 255, np.nan],
+                              [255, 255, 0],
+                              [np.nan, 0, 0]])
+            while True:
+                oldPixels = deepcopy(self.pixels)
+                for mask in [mask1, mask2]:
+                    for i in range(4):
+                        hits = self.hitOrMiss(mask, optimized)
+                        # trueCount = np.count_nonzero(hits)
+                        # ic(trueCount)
+                        self.deleteHit(hits, optimized)
+                        mask = np.rot90(mask, k=1, axes=(0, 1))
+                if np.array_equal(oldPixels, self.pixels):
+                    break
             self.limitPixelsAndShowImage(self.pixels, True)
-        self.measureTime("END")
-
-    def thinning(self, widthWindow, heightWindow, optimized):
-        # mask = np.array([[255, 255, 255], [255, 255, 255], [255, 255, 255]])  # erosion
-        mask = np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]])  # dilation
-        self.hitOrMiss(mask, optimized)
 
 
-        # self.measureTime("START")
-        # if self.image:
-        #     height, width, _ = self.pixels.shape
-        #     padHeight = heightWindow // 2
-        #     padWidth = widthWindow // 2
-        #     paddedImage = np.pad(self.pixels, ((padHeight, padHeight), (padWidth, padWidth), (0, 0)), mode='edge')
-        #     # if optimized:
-        #     #     reds, greens, blues = paddedImage[:, :, 0], paddedImage[:, :, 1], paddedImage[:, :, 2]
-        #     #     redSquares, greenSquares, blueSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(greens, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(blues, (heightWindow, widthWindow))
-        #     #     dilationRed, dilationGreen, dilationBlue = np.max(redSquares, axis=(2, 3)), np.max(greenSquares, axis=(2, 3)), np.max(blueSquares, axis=(2, 3))
-        #     #     self.pixels[:, :, 0][:, :], self.pixels[:, :, 1][:, :], self.pixels[:, :, 2][:, :] = dilationRed, dilationGreen, dilationBlue
-        #     # else:
-        #     dilatedPixels = deepcopy(self.pixels)
-        #     for y in range(0, height):
-        #         for x in range(0, width):
-        #             for c in range(3):
-        #
-        #                 mask = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-        #
-        #                 dilatedPixels[y, x, c] = np.max(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
-        #     self.pixels = deepcopy(dilatedPixels)
-        #
-        #     self.limitPixelsAndShowImage(self.pixels, True)
-        # self.measureTime("END")
 
     def thickening(self, widthWindow, heightWindow, optimized):
         ic("6")
@@ -235,17 +259,17 @@ class ImageRefactorApp:
             height = int(self.heightEntry.get()) if self.heightEntry.get() != "" else 3
             optimization = False if self.switchOptimizedState.get() == "off" else True
             if operationType == 1:
-                self.dilation(width, height, optimization)
+                self.measureTime(self.dilation, width, height, optimization)
             elif operationType == 2:
-                self.erosion(width, height, optimization)
+                self.measureTime(self.erosion, width, height, optimization)
             elif operationType == 3:
-                self.opening(width, height, optimization)
+                self.measureTime(self.opening, width, height, optimization)
             elif operationType == 4:
-                self.closing(width, height, optimization)
+                self.measureTime(self.closing, width, height, optimization)
             elif operationType == 5:
-                self.thinning(width, height, optimization)
+                self.measureTime(self.thinning, optimization)
             elif operationType == 6:
-                self.thickening(width, height, optimization)
+                self.measureTime(self.thickening, width, height, optimization)
             else:
                 return self.errorPopup("Nie ma takiej opcji")
 
@@ -267,7 +291,6 @@ class ImageRefactorApp:
         return False
 
     def meanIterationBinarization(self, optimized):
-        self.measureTime("START")
         if self.image:
             histogram = self.createHistogram()
             threshold = 128
@@ -293,7 +316,7 @@ class ImageRefactorApp:
                     threshold = newThreshold
             print(f"Ostateczny prog = {threshold}")
             # lookup table
-            thresholdTable = np.zeros(256, dtype=np.int32)
+            thresholdTable = np.zeros(256, dtype=np.uint8)
             for i in range(threshold, 256):
                 thresholdTable[i] = 255
             if optimized:
@@ -305,12 +328,10 @@ class ImageRefactorApp:
                         for c in range(3):
                             self.pixels[y, x, c] = thresholdTable[self.pixels[y, x, c]]
             self.limitPixelsAndShowImage(self.pixels, True)
-        self.measureTime("END")
 
     def createHistogram(self):
-        self.measureTime("START")
         if self.image:
-            histogram = np.zeros(256, dtype=np.int32)
+            histogram = np.zeros(256, dtype=np.uint8)
             # height, width, color = self.pixels.shape
             # for y in range(height):
             #     for x in range(width):
@@ -320,11 +341,9 @@ class ImageRefactorApp:
             for value, count in zip(uniqueValues, counts):
                 histogram[value] = count
             # print(self.histogram)
-        self.measureTime("END")
         return histogram
 
     def greyConversion(self, adjusted=True):
-        self.measureTime("START")
         if self.image:
             # Zrobienie sredniej z wyswietlanych pixeli na ekranie
             if adjusted:
@@ -337,7 +356,6 @@ class ImageRefactorApp:
                 self.pixels[:, :, 0] = averages
                 self.pixels[:, :, 1] = averages
                 self.pixels[:, :, 2] = averages
-        self.measureTime("END")
 
     def errorPopup(self, information=None):
         self.errorLabel = Label(Toplevel(), text=information, padx=20, pady=20)
@@ -400,7 +418,7 @@ class ImageRefactorApp:
         self.image = Image.open(filePath)
         if self.image is None:
             return
-        self.pixels = np.array(self.image, dtype=np.int32)
+        self.pixels = np.array(self.image, dtype=np.uint8)
         self.tkImage = ImageTk.PhotoImage(self.image)
         self.settingsAfterLoad()
         self.greyConversion()
@@ -412,7 +430,7 @@ class ImageRefactorApp:
             self.image = deepcopy(self.originalImage)
             if self.image is None:
                 return
-            self.pixels = np.array(self.image, dtype=np.int32)
+            self.pixels = np.array(self.image, dtype=np.uint8)
             self.tkImage = ImageTk.PhotoImage(self.image)
             self.settingsAfterLoad()
 
@@ -513,10 +531,11 @@ class ImageRefactorApp:
                 print(f"Error getting pixel color: {e}")
         return None
 
-    def measureTime(self, startEnd):
-        if startEnd.lower() == "start":
-            self.startTime = time.perf_counter()
-        elif startEnd.lower() == "end":
-            self.endTime = time.perf_counter()
-            execution_time = self.endTime - self.startTime
-            print(f"Czas wykonania funkcji: {execution_time} sekundy")
+    @staticmethod
+    def measureTime(func, *args, **kwargs):
+        startTime = time.perf_counter()
+        result = func(*args, **kwargs)
+        endTime = time.perf_counter()
+        executionTime = endTime - startTime
+        print(f"Function '{func.__name__}' took {executionTime:.6f} seconds to execute.")
+        return result
