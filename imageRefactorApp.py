@@ -63,29 +63,10 @@ class ImageRefactorApp:
         self.switchOptimizedState = StringVar(value="on")
         self.optimizationSwitch = ctk.CTkSwitch(self.frame, text="Optimization", variable=self.switchOptimizedState, onvalue="on", offvalue="off", button_color="black")  # progress_color="blue"
         self.optimizationSwitch.grid(row=4, column=0, sticky="WE")
-        # LabelFrame for binarization
-        self.binarizationOperationsLabel = LabelFrame(self.frame, text="Binarization", padx=10, pady=10, labelanchor="nw")
-        self.binarizationOperationsLabel.grid(row=6, column=0, sticky="WE")
-        # RadioButtons for binarization
-        self.operationType = StringVar(value="3")
-        self.radioManually = Radiobutton(self.binarizationOperationsLabel, text="Manually", value="1", variable=self.operationType, command=self.onOperationSelect)
-        self.radioManually.grid(row=1, column=0, sticky="W", columnspan=2)
-        self.radioPercentBlackSelection = Radiobutton(self.binarizationOperationsLabel, text="Percent Black Selection", value="2", variable=self.operationType, command=self.onOperationSelect)
-        self.radioPercentBlackSelection.grid(row=2, column=0, sticky="W", columnspan=2)
-        self.radioMeanIteration = Radiobutton(self.binarizationOperationsLabel, text="Mean iteration", value="3", variable=self.operationType, command=self.onOperationSelect)
-        self.radioMeanIteration.grid(row=3, column=0, sticky="W", columnspan=2)
-        # Parameters for binarization
-        vcmd = (self.binarizationOperationsLabel.register(self.validateEntry))
-        self.parameterOperationsLabel = LabelFrame(self.binarizationOperationsLabel, text="Threshold:", padx=10, pady=10, labelanchor="nw")
-        self.parameterOperationsLabel.grid(row=8, column=0, sticky="WE")
-        self.thresholdEntry = Entry(self.parameterOperationsLabel, validate='all', validatecommand=(vcmd, '%P'))
-        self.thresholdEntry.grid(row=0, column=1)
-        # Submit button for binarization
-        self.operationSubmitButton = Button(self.binarizationOperationsLabel, text="Perform binarization", command=self.doBinarization)
-        self.operationSubmitButton.grid(row=9, column=0, sticky="WE", columnspan=2)
+        # Morphology operators buttons
         bold18 = font.Font(size=18, weight="bold")
         self.dilationButton = Button(self.frame, text="Dilation", command=lambda: self.doMorphology(1))
-        self.dilationButton.grid(row=7, column=0, columnspan=2, sticky="WE")
+        self.dilationButton.grid(row=6, column=0, columnspan=2, sticky="WE")
         self.dilationButton['font'] = bold18
         self.erosionButton = Button(self.frame, text="Erosion", command=lambda: self.doMorphology(2))
         self.erosionButton.grid(row=8, column=0, columnspan=2, sticky="WE")
@@ -105,7 +86,7 @@ class ImageRefactorApp:
         # Parameters for morphology windows height or width
         self.morphologyParameterLabel = Label(self.frame)
         self.morphologyParameterLabel.grid(row=13, column=0)
-        validationOddNumbers = (self.binarizationOperationsLabel.register(self.validateEntryOddNumber))
+        validationOddNumbers = (self.morphologyParameterLabel.register(self.validateEntryOddNumber))
         self.widthLabel = Label(self.morphologyParameterLabel, text="Width:")
         self.widthLabel.grid(row=0, column=0)
         self.widthLabel['font'] = bigFont
@@ -145,27 +126,70 @@ class ImageRefactorApp:
                 dilatedPixels = deepcopy(self.pixels)
                 for y in range(0, height):
                     for x in range(0, width):
-                        dilatedPixels[y, x, 0] = np.max(paddedImage[y:y+heightWindow, x:x+widthWindow, 0])
-                        dilatedPixels[y, x, 1] = np.max(paddedImage[y:y + heightWindow, x:x + widthWindow, 1])
-                        dilatedPixels[y, x, 2] = np.max(paddedImage[y:y + heightWindow, x:x + widthWindow, 2])
+                        for c in range(3):
+                            dilatedPixels[y, x, c] = np.max(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
                 self.pixels = deepcopy(dilatedPixels)
             self.limitPixelsAndShowImage(self.pixels, True)
         self.measureTime("END")
 
 
-    def erosion(self):
-        ic("2")
+    def erosion(self, widthWindow, heightWindow, optimized):
+        self.measureTime("START")
+        if self.image:
+            height, width, _ = self.pixels.shape
+            padHeight = heightWindow // 2
+            padWidth = widthWindow // 2
+            paddedImage = np.pad(self.pixels, ((padHeight, padHeight), (padWidth, padWidth), (0, 0)), mode='edge')
+            if optimized:
+                reds, greens, blues = paddedImage[:, :, 0], paddedImage[:, :, 1], paddedImage[:, :, 2]
+                redSquares, greenSquares, blueSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(greens, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(blues, (heightWindow, widthWindow))
+                dilationRed, dilationGreen, dilationBlue = np.min(redSquares, axis=(2, 3)), np.min(greenSquares, axis=(2, 3)), np.min(blueSquares, axis=(2, 3))
+                self.pixels[:, :, 0][:, :], self.pixels[:, :, 1][:, :], self.pixels[:, :, 2][:, :] = dilationRed, dilationGreen, dilationBlue
+            else:
+                dilatedPixels = deepcopy(self.pixels)
+                for y in range(0, height):
+                    for x in range(0, width):
+                        for c in range(3):
+                            dilatedPixels[y, x, c] = np.min(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
+                self.pixels = deepcopy(dilatedPixels)
+            self.limitPixelsAndShowImage(self.pixels, True)
+        self.measureTime("END")
 
-    def opening(self):
-        ic("3")
+    def opening(self, widthWindow, heightWindow, optimized):
+        self.erosion(widthWindow, heightWindow, optimized)
+        self.dilation(widthWindow, heightWindow, optimized)
 
-    def closing(self):
-        ic("4")
+    def closing(self, widthWindow, heightWindow, optimized):
+        self.dilation(widthWindow, heightWindow, optimized)
+        self.erosion(widthWindow, heightWindow, optimized)
 
-    def thinning(self):
-        ic("5")
+    def thinning(self, widthWindow, heightWindow, optimized):
+        self.measureTime("START")
+        if self.image:
+            height, width, _ = self.pixels.shape
+            padHeight = heightWindow // 2
+            padWidth = widthWindow // 2
+            paddedImage = np.pad(self.pixels, ((padHeight, padHeight), (padWidth, padWidth), (0, 0)), mode='edge')
+            # if optimized:
+            #     reds, greens, blues = paddedImage[:, :, 0], paddedImage[:, :, 1], paddedImage[:, :, 2]
+            #     redSquares, greenSquares, blueSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(greens, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(blues, (heightWindow, widthWindow))
+            #     dilationRed, dilationGreen, dilationBlue = np.max(redSquares, axis=(2, 3)), np.max(greenSquares, axis=(2, 3)), np.max(blueSquares, axis=(2, 3))
+            #     self.pixels[:, :, 0][:, :], self.pixels[:, :, 1][:, :], self.pixels[:, :, 2][:, :] = dilationRed, dilationGreen, dilationBlue
+            # else:
+            dilatedPixels = deepcopy(self.pixels)
+            for y in range(0, height):
+                for x in range(0, width):
+                    for c in range(3):
 
-    def thickening(self):
+                        mask = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+
+                        dilatedPixels[y, x, c] = np.max(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
+            self.pixels = deepcopy(dilatedPixels)
+
+            self.limitPixelsAndShowImage(self.pixels, True)
+        self.measureTime("END")
+
+    def thickening(self, widthWindow, heightWindow, optimized):
         ic("6")
 
     def doMorphology(self, operationType):
@@ -178,15 +202,15 @@ class ImageRefactorApp:
             if operationType == 1:
                 self.dilation(width, height, optimization)
             elif operationType == 2:
-                self.erosion(width, height)
+                self.erosion(width, height, optimization)
             elif operationType == 3:
-                self.opening(width, height)
+                self.opening(width, height, optimization)
             elif operationType == 4:
-                self.closing(width, height)
+                self.closing(width, height, optimization)
             elif operationType == 5:
-                self.thinning(width, height)
+                self.thinning(width, height, optimization)
             elif operationType == 6:
-                self.thickening(width, height)
+                self.thickening(width, height, optimization)
             else:
                 return self.errorPopup("Nie ma takiej opcji")
 
@@ -206,54 +230,6 @@ class ImageRefactorApp:
             if intP % 2:
                 return True
         return False
-
-    def onOperationSelect(self):
-        if self.operationType.get() == '1':
-            self.parameterOperationsLabel.grid(row=8, column=0, sticky="WE")
-            self.parameterOperationsLabel.configure(text="Threshold:")
-        elif self.operationType.get() == '2':
-            self.parameterOperationsLabel.grid(row=8, column=0, sticky="WE")
-            self.parameterOperationsLabel.configure(text="Procent of black pixels:")
-        elif self.operationType.get() == '3':
-            self.parameterOperationsLabel.grid_forget()
-        elif self.operationType.get() == '5':
-            self.parameterOperationsLabel.grid_forget()
-        else:
-            raise Exception("Nie ma takiej opcji")
-
-    def doBinarization(self):
-        if self.image:
-            self.greyConversion()
-            optimization = False if self.switchOptimizedState.get() == "off" else True
-            if self.operationType.get() == '1':
-                if not self.thresholdEntry.get():
-                    self.errorPopup("Error:Threshold was not given.\nYou must give threshold parameter to do that binarization")
-                else:
-                    threshold = int(self.thresholdEntry.get())
-                    if 0 <= threshold <= 255:
-                        self.thresholdBinarization(threshold, optimization)
-                        # self.thresholdBinarization(threshold) if self.switchOptimizedState.get() == "off" else self.thresholdBinarizationOptimized(threshold)
-                    else:
-                        self.errorPopup(f"Error:Threshold must be in range of 0 to 255 not {threshold}")
-            elif self.operationType.get() == '2':
-                if not self.thresholdEntry.get():
-                    self.errorPopup("Error:Percent of black pixels was not given.\nYou must give percent of black pixels parameter to do that binarization")
-                else:
-                    percent = int(self.thresholdEntry.get())
-                    if 0 <= percent <= 100:
-                        self.percentBlackPixelsBinarization(percent, optimization)
-                        # self.percentBlackPixelsBinarization(percent) if self.switchOptimizedState.get() == "off" else self.percentBlackPixelsBinarizationOptimized(percent)
-                    else:
-                        self.errorPopup(f"Error:Percent of black pixels must be in range of 0 to 100 not {percent}")
-            elif self.operationType.get() == '3':
-                self.meanIterationBinarization(optimization)
-            # elif self.operationType.get() == '5':
-            #     self.minimumErrorBinarization() if self.switchOptimizedState.get() == "off" else self.minimumErrorBinarization()
-            else:
-                self.reloadOriginalJPG()
-                print("Nie ma takiej operacji")
-        else:
-            self.errorPopup("Error: There's no image loaded.")
 
     def meanIterationBinarization(self, optimized):
         self.measureTime("START")
@@ -296,38 +272,6 @@ class ImageRefactorApp:
             self.limitPixelsAndShowImage(self.pixels, True)
         self.measureTime("END")
 
-    # def minimumErrorBinarization(self):
-    #     print("Min error")
-
-    def percentBlackPixelsBinarization(self, percent, optimized):
-        self.measureTime("START")
-        if self.image:
-            histogram = self.createHistogram()
-            height, width, color = self.pixels.shape
-            allColor = height*width
-            requirement = allColor * percent / 100
-            sumValues = 0
-            thresholdIndex = 0
-            for index, value in enumerate(histogram):
-                sumValues += value
-                if sumValues >= requirement:
-                    thresholdIndex = index
-                    break
-            # lookup table
-            thresholdTable = np.zeros(256, dtype=np.int32)
-            for i in range(256):
-                thresholdTable[i] = 255 if i >= thresholdIndex else 0
-            if optimized:
-                self.pixels = thresholdTable[self.pixels]
-            else:
-                height, width, _ = self.pixels.shape
-                for y in range(0, height):
-                    for x in range(0, width):
-                        for c in range(3):
-                            self.pixels[y, x, c] = thresholdTable[self.pixels[y, x, c]]
-            self.limitPixelsAndShowImage(self.pixels, True)
-        self.measureTime("END")
-
     def createHistogram(self):
         self.measureTime("START")
         if self.image:
@@ -343,26 +287,6 @@ class ImageRefactorApp:
             # print(self.histogram)
         self.measureTime("END")
         return histogram
-
-    def thresholdBinarization(self, thresholdValue, optimized):
-        self.measureTime("START")
-        if self.image:
-            # # lookup table
-            thresholdTable = np.zeros(256, dtype=np.int32)
-            for i in range(256):
-                thresholdTable[i] = 255 if i >= thresholdValue else 0
-            if optimized:
-                self.pixels = thresholdTable[self.pixels]  # version with use of lookup table
-                # self.pixels = np.where(self.pixels >= thresholdValue, 255, 0) #  simple version
-            else:
-                height, width, _ = self.pixels.shape
-                for y in range(0, height):
-                    for x in range(0, width):
-                        for c in range(3):
-                            self.pixels[y, x, c] = thresholdTable[self.pixels[y, x, c]]
-                            #self.pixels[y, x, c] = 255 if self.pixels[y, x, c] >= thresholdValue else 0
-            self.limitPixelsAndShowImage(self.pixels, True)
-        self.measureTime("END")
 
     def greyConversion(self, adjusted=True):
         self.measureTime("START")
