@@ -163,31 +163,66 @@ class ImageRefactorApp:
         self.dilation(widthWindow, heightWindow, optimized)
         self.erosion(widthWindow, heightWindow, optimized)
 
-    def thinning(self, widthWindow, heightWindow, optimized):
+    def hitOrMiss(self, mask, optimized):
         self.measureTime("START")
         if self.image:
             height, width, _ = self.pixels.shape
+            heightWindow, widthWindow = mask.shape
+            # ic(mask, mask.shape, heightWindow, widthWindow)
             padHeight = heightWindow // 2
             padWidth = widthWindow // 2
             paddedImage = np.pad(self.pixels, ((padHeight, padHeight), (padWidth, padWidth), (0, 0)), mode='edge')
-            # if optimized:
-            #     reds, greens, blues = paddedImage[:, :, 0], paddedImage[:, :, 1], paddedImage[:, :, 2]
-            #     redSquares, greenSquares, blueSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(greens, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(blues, (heightWindow, widthWindow))
-            #     dilationRed, dilationGreen, dilationBlue = np.max(redSquares, axis=(2, 3)), np.max(greenSquares, axis=(2, 3)), np.max(blueSquares, axis=(2, 3))
-            #     self.pixels[:, :, 0][:, :], self.pixels[:, :, 1][:, :], self.pixels[:, :, 2][:, :] = dilationRed, dilationGreen, dilationBlue
-            # else:
-            dilatedPixels = deepcopy(self.pixels)
-            for y in range(0, height):
-                for x in range(0, width):
-                    for c in range(3):
-
-                        mask = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-
-                        dilatedPixels[y, x, c] = np.max(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
-            self.pixels = deepcopy(dilatedPixels)
-
+            if optimized:
+                reds = paddedImage[:, :, 0]
+                redSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow))
+                undefinedMask = np.isnan(mask)
+                equalsRed = np.all(np.equal(redSquares, mask) | undefinedMask, axis=(2, 3))
+                # hitOrMiss = np.where(equalsRed, 255, 0)  # erosion
+                hitOrMiss = np.where(equalsRed, 0, 255)  # dilatation
+                self.pixels[:, :, 0] = self.pixels[:, :, 1] = self.pixels[:, :, 2] = hitOrMiss
+            else:
+                dilatedPixels = deepcopy(self.pixels)
+                for y in range(0, height):
+                    for x in range(0, width):
+                        undefinedMask = np.isnan(mask)
+                        equal = np.all(np.equal(paddedImage[y:y+heightWindow, x:x+widthWindow, 0], mask) | undefinedMask)
+                        # dilatedPixels[y, x, 0] = 255 if equal else 0  # erosion
+                        dilatedPixels[y, x, 0] = 0 if equal else 255  # dilatation
+                dilatedPixels[:, :, 1] = dilatedPixels[:, :, 2] = dilatedPixels[:, :, 0]
+                self.pixels = deepcopy(dilatedPixels)
             self.limitPixelsAndShowImage(self.pixels, True)
         self.measureTime("END")
+
+    def thinning(self, widthWindow, heightWindow, optimized):
+        # mask = np.array([[255, 255, 255], [255, 255, 255], [255, 255, 255]])  # erosion
+        mask = np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]])  # dilation
+        self.hitOrMiss(mask, optimized)
+
+
+        # self.measureTime("START")
+        # if self.image:
+        #     height, width, _ = self.pixels.shape
+        #     padHeight = heightWindow // 2
+        #     padWidth = widthWindow // 2
+        #     paddedImage = np.pad(self.pixels, ((padHeight, padHeight), (padWidth, padWidth), (0, 0)), mode='edge')
+        #     # if optimized:
+        #     #     reds, greens, blues = paddedImage[:, :, 0], paddedImage[:, :, 1], paddedImage[:, :, 2]
+        #     #     redSquares, greenSquares, blueSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(greens, (heightWindow, widthWindow)), np.lib.stride_tricks.sliding_window_view(blues, (heightWindow, widthWindow))
+        #     #     dilationRed, dilationGreen, dilationBlue = np.max(redSquares, axis=(2, 3)), np.max(greenSquares, axis=(2, 3)), np.max(blueSquares, axis=(2, 3))
+        #     #     self.pixels[:, :, 0][:, :], self.pixels[:, :, 1][:, :], self.pixels[:, :, 2][:, :] = dilationRed, dilationGreen, dilationBlue
+        #     # else:
+        #     dilatedPixels = deepcopy(self.pixels)
+        #     for y in range(0, height):
+        #         for x in range(0, width):
+        #             for c in range(3):
+        #
+        #                 mask = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+        #
+        #                 dilatedPixels[y, x, c] = np.max(paddedImage[y:y+heightWindow, x:x+widthWindow, c])
+        #     self.pixels = deepcopy(dilatedPixels)
+        #
+        #     self.limitPixelsAndShowImage(self.pixels, True)
+        # self.measureTime("END")
 
     def thickening(self, widthWindow, heightWindow, optimized):
         ic("6")
