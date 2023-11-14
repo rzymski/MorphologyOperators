@@ -158,41 +158,6 @@ class ImageRefactorApp:
         self.dilation(widthWindow, heightWindow, optimized)
         self.erosion(widthWindow, heightWindow, optimized)
 
-    # def hitOrMiss(self, mask, optimized):
-    #     self.measureTime("START")
-    #     if self.image:
-    #         height, width, _ = self.pixels.shape
-    #         heightWindow, widthWindow = mask.shape
-    #         # ic(mask, mask.shape, heightWindow, widthWindow)
-    #         padHeight = heightWindow // 2
-    #         padWidth = widthWindow // 2
-    #         paddedImage = np.pad(self.pixels, ((padHeight, padHeight), (padWidth, padWidth), (0, 0)), mode='edge')
-    #         if optimized:
-    #             reds = paddedImage[:, :, 0]
-    #             redSquares = np.lib.stride_tricks.sliding_window_view(reds, (heightWindow, widthWindow))
-    #             undefinedMask = np.isnan(mask)
-    #             equalsRed = np.all(np.equal(redSquares, mask) | undefinedMask, axis=(2, 3))
-    #             # hitOrMiss = np.where(equalsRed, 255, 0)  # erosion
-    #             hitOrMiss = np.where(equalsRed, 0, 255)  # dilatation
-    #             self.pixels[:, :, 0] = self.pixels[:, :, 1] = self.pixels[:, :, 2] = hitOrMiss
-    #         else:
-    #             dilatedPixels = deepcopy(self.pixels)
-    #             for y in range(0, height):
-    #                 for x in range(0, width):
-    #                     undefinedMask = np.isnan(mask)
-    #                     equal = np.all(np.equal(paddedImage[y:y+heightWindow, x:x+widthWindow, 0], mask) | undefinedMask)
-    #                     # dilatedPixels[y, x, 0] = 255 if equal else 0  # erosion
-    #                     dilatedPixels[y, x, 0] = 0 if equal else 255  # dilatation
-    #             dilatedPixels[:, :, 1] = dilatedPixels[:, :, 2] = dilatedPixels[:, :, 0]
-    #             self.pixels = deepcopy(dilatedPixels)
-    #         self.limitPixelsAndShowImage(self.pixels, True)
-    #     self.measureTime("END")
-    #
-    # def thinning(self, widthWindow, heightWindow, optimized):
-    #     # mask = np.array([[255, 255, 255], [255, 255, 255], [255, 255, 255]])  # erosion
-    #     mask = np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]])  # dilation
-    #     self.hitOrMiss(mask, optimized)
-
     def hitOrMiss(self, mask, optimized):
         if self.image:
             height, width, _ = self.pixels.shape
@@ -215,15 +180,15 @@ class ImageRefactorApp:
                         hitOrMiss[y, x] = hitOrMissElement
             return hitOrMiss
 
-    def deleteHit(self, hits, optimized):
+    def changeHit(self, hits, newValue, optimized):
         height, width, _ = self.pixels.shape
         if optimized:
-            self.pixels[hits] = 0
+            self.pixels[hits] = newValue
         else:
             for y in range(height):
                 for x in range(width):
                     if hits[y, x]:
-                        self.pixels[y, x] = 0
+                        self.pixels[y, x] = newValue
 
     def thinning(self, optimized):
         if self.image:
@@ -233,6 +198,13 @@ class ImageRefactorApp:
             mask2 = np.array([[255, 255, np.nan],
                               [255, 255, 0],
                               [np.nan, 0, 0]])
+            # mask1 = np.array([[0, 0, 0],
+            #                   [np.nan, 255, np.nan],
+            #                   [255, 255, 255]])
+            # mask2 = np.array([[np.nan, 0, 0],
+            #                   [255, 255, 0],
+            #                   [np.nan, 255, np.nan]])
+            count = 0
             while True:
                 oldPixels = deepcopy(self.pixels)
                 for mask in [mask1, mask2]:
@@ -240,16 +212,39 @@ class ImageRefactorApp:
                         hits = self.hitOrMiss(mask, optimized)
                         # trueCount = np.count_nonzero(hits)
                         # ic(trueCount)
-                        self.deleteHit(hits, optimized)
+                        self.changeHit(hits, 0, optimized)
                         mask = np.rot90(mask, k=1, axes=(0, 1))
                 if np.array_equal(oldPixels, self.pixels):
                     break
+                else:
+                    count += 1
+            ic(f"Petla wykonala się {count} razy")
             self.limitPixelsAndShowImage(self.pixels, True)
 
-
-
-    def thickening(self, widthWindow, heightWindow, optimized):
-        ic("6")
+    def thickening(self, optimized):
+        if self.image:
+            mask1 = np.array([[255, 255, np.nan],
+                              [255, 0, np.nan],
+                              [255, np.nan, 0]])
+            mask2 = np.array([[np.nan, 255, 255],
+                              [np.nan, 0, 255],
+                              [0, np.nan, 255]])
+            count = 0
+            while True:
+                oldPixels = deepcopy(self.pixels)
+                for mask in [mask1, mask2]:
+                    for i in range(4):
+                        hits = self.hitOrMiss(mask, optimized)
+                        # trueCount = np.count_nonzero(hits)
+                        # ic(trueCount)
+                        self.changeHit(hits, 255, optimized)
+                        mask = np.rot90(mask, k=1, axes=(0, 1))
+                if np.array_equal(oldPixels, self.pixels):
+                    break
+                else:
+                    count += 1
+            ic(f"Petla wykonala się {count} razy")
+            self.limitPixelsAndShowImage(self.pixels, True)
 
     def doMorphology(self, operationType):
         if self.image:
@@ -269,7 +264,7 @@ class ImageRefactorApp:
             elif operationType == 5:
                 self.measureTime(self.thinning, optimization)
             elif operationType == 6:
-                self.measureTime(self.thickening, width, height, optimization)
+                self.measureTime(self.thickening, optimization)
             else:
                 return self.errorPopup("Nie ma takiej opcji")
 
