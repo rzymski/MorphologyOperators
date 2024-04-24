@@ -61,7 +61,7 @@ class ImageRefactorApp:
         self.pixelBlueEntry.grid(row=4, column=1)
         # Switch for optimization
         self.switchOptimizedState = StringVar(value="on")
-        self.optimizationSwitch = ctk.CTkSwitch(self.frame, text="Optimization", variable=self.switchOptimizedState, onvalue="on", offvalue="off", button_color="black")  # progress_color="blue"
+        self.optimizationSwitch = ctk.CTkSwitch(self.frame, text="Optimization", variable=self.switchOptimizedState, onvalue="on", offvalue="off", button_color="black", text_color="black")  # progress_color="blue"
         self.optimizationSwitch.grid(row=4, column=0, sticky="WE")
         # Morphology operators buttons
         bold18 = font.Font(size=18, weight="bold")
@@ -204,7 +204,7 @@ class ImageRefactorApp:
             # mask2 = np.array([[np.nan, 0, 0],
             #                   [255, 255, 0],
             #                   [np.nan, 255, np.nan]])
-            count = 0
+            count = 1
             while True:
                 oldPixels = deepcopy(self.pixels)
                 for mask in [mask1, mask2]:
@@ -229,7 +229,7 @@ class ImageRefactorApp:
             mask2 = np.array([[np.nan, 255, 255],
                               [np.nan, 0, 255],
                               [0, np.nan, 255]])
-            count = 0
+            count = 1
             while True:
                 oldPixels = deepcopy(self.pixels)
                 for mask in [mask1, mask2]:
